@@ -1,0 +1,304 @@
+---
+title: "Ubiqum_1_WifiLocationing_ExploratoryAnalysis"
+author: "SuninChoi"
+date: "12/6/2019"
+output: html_document
+Detecting Indoor Wifi location - Exploring and preprocessing dataset
+---
+
+
+### Wifi Locationing
+#### 1. Exploratory Analysis
+##### 1.1 Load dataset and libraries
+
+
+```{r load dataset}
+library(tidyverse)
+library(ggplot2)
+library(funModeling)
+library(corrplot)
+library(dplyr)
+library(ggplot2)
+library(RColorBrewer)
+library(readxl)
+library(readr)
+library(viridis)
+
+
+wftrain <- read.csv("C:/Users/sunny/Desktop/5.Wifi/5.Wifi/1.Data/trainingData.csv")
+wfvalid <- read.csv("C:/Users/sunny/Desktop/5.Wifi/5.Wifi/1.Data/validationData.csv")
+wifi <- rbind(wftrain, wfvalid)
+
+
+```
+
+
+
+##### 1.2 Exploring basic dataset
+
+```{r pressure, echo=FALSE}
+dim(wftrain)  # 19937 529
+dim(wfvalid)  # 1111  529    we have same number of variables in training and validation data set
+
+summary(wftrain[,521:529])
+str(wftrain[,521:529])
+
+summary(wfvalid[,521:529])
+str(wfvalid[,521:529])
+
+
+p <- ggplot(wftrain, aes(FLOOR, SPACEID, color = TIMESTAMP)) + geom_point()
+p + facet_wrap(~BUILDINGID)
+
+q <- ggplot(wftrain, aes(LONGITUDE, LATITUDE, color = BUILDINGID)) + geom_point(color = "grey") + geom_smooth(method = "lm")
+
+m <- ggplot(wftrain, aes(USERID, TIMESTAMP)) + geom_point(aes(col=FLOOR, size=USERID)) 
+m + facet_wrap(~BUILDINGID)
+
+ggplot(wftrain, aes(LONGITUDE, LATITUDE)) + 
+  geom_point(aes(col=TIMESTAMP, size=PHONEID)) +   
+  geom_smooth(method="loess", se=F) +  
+  labs(subtitle="Area Vs Population", 
+       y="Population", 
+       x="Area", 
+       title="Scatterplot + Encircle", 
+       caption="Source: midwest")
+
+```
+
+
+
+
+#### 2. Data Preprocessing
+
+```{r}
+# 1.Convert WAP 100 to -105
+# (두번째: 신호 없는 100을 -105로 전환)
+wftrain[wftrain == 100] <- -105 
+wfvalid[wfvalid == 100] <- -105
+
+# 2. Convert Weak signal to -105
+# (-90 이하도 신호가 없는 것과 같기 때문에 변환)
+wftrain[,1:465 < -90] <- -105
+wfvalid[,1:465 < -90] <- -105
+
+
+# 3. Remove empty signal columns and rows
+w <- data.frame(variance = apply(wftrain, 2, var),
+                mean = apply(wftrain, 2, mean),
+                median = apply(wftrain, 2, median))
+w
+
+col100 <- apply(wftrain[,1:465], 2, var) == 0
+row100 <- apply(wftrain[,1:465], 1, var) == 0
+train1 <- wftrain[!row100, !col100]
+
+col101 <- apply(wfvalid[,1:465], 2, var) == 0
+row101 <- apply(wfvalid[,1:465], 1, var) == 0
+test1 <- wfvalid[!row101, !col101]
+
+#  -> + 100을 -105로 바꾸고 -> -90보다 낮은 시그널도 -105로, 다음 105만 있는 컬럼 로를 없애기
+
+# 4. Equalizing the column amount in both WAPS data sets
+train2 <- train1[, which(colnames(train1) %in%
+                                      colnames(test1))]
+
+test2 <- test1[, which(colnames(test1) %in% 
+                                      colnames(train1))]
+
+# 5. Convert data types
+train2$FLOOR <- as.factor(train2$FLOOR)
+train2$BUILDINGID <- as.factor(train2$BUILDINGID)
+train2$SPACEID <- as.factor(train2$SPACEID)
+train2$RELATIVEPOSITION <- as.factor(train2$RELATIVEPOSITION)
+train2$USERID <- as.factor(train2$USERID)
+train2$PHONEID <- as.factor(train2$PHONEID)
+
+test2$FLOOR <- as.factor(test2$FLOOR)
+test2$BUILDINGID <- as.factor(test2$BUILDINGID)
+test2$PHONEID <- as.factor(test2$PHONEID)
+
+```
+
+
+
+
+#### 3.Preparing and saving modified datasets for building models
+
+
+```{r}
+testset <- train2 %>% 
+  select(starts_with("WAP"), LONGITUDE, LATITUDE, BUILDINGID, FLOOR)
+
+validationset <- test2 %>% 
+  select(starts_with("WAP"), LONGITUDE, LATITUDE, BUILDINGID, FLOOR)
+
+
+# 빌딩이나 층수로 병합해서 더 효율적으로 분석 가능
+# 예를 들면, 단순히 빌딩별, 층수별, 위도별, 경도별 측정이 아니라
+# 빌딩을 중심으로 층수별, 위도별, 경도별로 퐁 9가지 기본 데이터셋 준비 가능
+# 하지만 처음에는 네가지 파일만 담아서 네개별 세네가지 모델을 만들어서 총 12개 정도
+
+# 1) Devide datasets
+# Training Set
+buildID <- testset %>% 
+  select(starts_with("WAP"), BUILDINGID) 
+
+write.csv(buildID, "C:/Users/sunny/Desktop/5.Wifi/5.Wifi/1.Data/buildID.csv")
+
+Floor <- testset %>% 
+  select(starts_with("WAP"), FLOOR) 
+
+write.csv(Floor, "C:/Users/sunny/Desktop/5.Wifi/5.Wifi/1.Data/Floor.csv")
+
+Longtitude <- testset %>% 
+  select(starts_with("WAP"), LONGITUDE)
+
+write.csv(Longtitude, "C:/Users/sunny/Desktop/5.Wifi/5.Wifi/1.Data/Longtitude.csv")
+
+Latitude <- testset %>% 
+  select(starts_with("WAP"), LATITUDE)
+
+write.csv(Latitude, "C:/Users/sunny/Desktop/5.Wifi/5.Wifi/1.Data/Latitude.csv")
+
+
+# Validation Set
+buildID_v <- validationset %>% 
+  select(starts_with("WAP"), BUILDINGID) 
+
+write.csv(buildID, "C:/Users/sunny/Desktop/5.Wifi/5.Wifi/1.Data/buildID_v.csv")
+
+Floor_v <- validationset %>% 
+  select(starts_with("WAP"), FLOOR) 
+
+write.csv(Floor_v, "C:/Users/sunny/Desktop/5.Wifi/5.Wifi/1.Data/Floor_v.csv")
+
+Longtitude_v <- validationset %>% 
+  select(starts_with("WAP"), LONGITUDE)
+
+write.csv(Longtitude_v, "C:/Users/sunny/Desktop/5.Wifi/5.Wifi/1.Data/Longtitude_v.csv")
+
+Latitude_v <- validationset %>% 
+  select(starts_with("WAP"), LATITUDE)
+write.csv(Latitude_v, "C:/Users/sunny/Desktop/5.Wifi/5.Wifi/1.Data/Latitude_v.csv")
+
+
+
+
+
+
+
+```
+
+
+####Etc. Exploring dataset
+
+
+```{r}
+# 1.Remove columns with all 100 WAP 
+# (첫번째: 100만 있는 열 없애기)
+# 1.1 Training dataset
+# train1 <- wftrain[-which(apply(wftrain, 2, var) == 0)] (work)
+# train2 <- wftrain[-which(apply(wftrain, 1, var) == 0)] (not work, why?)
+
+# per columns with how many unique values
+# train2 <- subset(wftrain, select=train1>1) 
+# no unique = 1 // 21048 obs. 529 -> 19937 obs. 474/466
+# 1.2 Test dataset
+# test1 <- sapply(wfvalid,function(x) length(unique(x)))
+# test2 <- subset(wfvalid, select=test1>1) 
+# 1111 obs. 373/368
+
+# 2.Remove rows with all 100 WAP 
+# (두번째: 100만 있는 행 없애기)
+# 2.1 Training dataset
+# r100 <- apply(train2[,1:465], 1, function(x) 
+# length(unique(x[!is.na(x)])) != 1)
+# train2[r100, ] #19937obs 474 var
+# 2.2Test dataset
+# r101 <- apply(test2[,1:368], 1, function(x) 
+# length(unique(x[!is.na(x)])) != 1)
+# test2[r101, ] #1111obs 373 var
+
+
+# Equalizing? Normalizing?
+
+```
+
+
+
+```{r}
+# Check distribution of signal strength
+# traning data
+x <- train2[,1:465]
+x <- stack(x) #9270702 obs
+#데이터프레임 또는 list x의 별도 열들을 단독 열로 변형시키고 각 관측 값이 어디서 나왔는지를 알려는 팩터를 추가시켜줌(unstack()은 분리)
+
+x <- x[-grep(-105, x$values),] # remove -105 from values in rows, 문자열이 저장된 벡터에서 찾을 문자를 포함하는 문자열을 추출하는 함수. grep("찾을 문자", "문자열", ......)
+
+hist(x$values, xlab = "WAP strength", main = "Distribution of WAPs signal stength (Training set)", col = "turquoise3")
+
+# test data
+y <- test2[,1:367]
+y <- stack(y) # 407737 obs
+
+y <- y[-grep(-105, y$values),]
+hist(y$values, xlab = "WAP strength", main = "Distribution of WAPs signal stength (Test set)", col = "royalblue4")
+
+ggplot() +
+  geom_histogram(data = x, aes(values), fill = "turquoise3", alpha = 1, binwidth = 1) +
+  geom_histogram(data = y, aes(values), fill = "royalblue4", alpha = 1, binwidth = 1) +
+  ggtitle("Distribution of WAPs signal strength (Training and Test sets)") +
+  xlab("WAP strength")
+
+
+# Check distribution of how many WAPs have signal
+# TRAINING SET
+train2$count <- rowSums(train2[, 1:465] != -105)
+str(train2$count)
+
+ggplot(train2, aes(count, fill = as.factor(train2$BUILDINGID))) +
+  geom_histogram(binwidth = 1)+
+  ggtitle("Number of WAPs detected per building (Training set)") +
+  scale_fill_manual(name="Buildings", values = c("0" = "lightpink2",
+                               "1" = "lightsalmon2",
+                               "2" = "navajowhite1"),
+                    labels=c("Building 1","Building 2", "Building 3"))
+
+# TEST SET
+test2$count <- rowSums(test2[, 1:367] != -105)
+ggplot(test2, aes(count, fill = as.factor(test2$BUILDINGID))) +
+  geom_histogram(binwidth = 1)+
+  ggtitle("Number of WAPs detected per building (Test set)") +
+  scale_fill_manual(name="Buildings", values = c("0" = "lightpink2",
+                                                 "1" = "lightsalmon2",
+                                                 "2" = "navajowhite1"),
+                    labels=c("Building 1","Building 2", "Building 3"))
+
+
+
+
+
+# Locations at which users logged in 
+# Red colour is outside the room, black inside
+p <- ggplot(train2, aes(train2$LONGITUDE, train2$LATITUDE))
+p + geom_point(colour = as.factor(train2$RELATIVEPOSITION)) +
+  xlim(0, 400) +
+  ylim(0, 300) +
+  xlab("Longitude") +
+  ylab("Latitude") +
+  ggtitle ("Locations at which users loged in (Training dataset)")
+
+# Training and Validation log in locations
+ggplot() +
+  geom_point(data = train2, aes(x = LONGITUDE, y = LATITUDE, colour = "Training dataset")) +
+  geom_point(data = test2, aes(x = LONGITUDE, y = LATITUDE, colour = "Test dataset")) +
+  ggtitle("Log In Locations (Training and Test sets)") 
+
+
+
+```
+
+
+
+

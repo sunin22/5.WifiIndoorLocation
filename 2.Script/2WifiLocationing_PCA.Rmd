@@ -1,0 +1,419 @@
+---
+title: "Ubiqum_2_WifiLocationing_FeatureSelectionwithPCA"
+author: "SuninChoi"
+date: "1/10/2020"
+output: html_document
+Feature Selection by using PCA(Principle Component Analsis)
+---
+
+```{r load dataset}
+library(tidyverse)
+library(ggplot2)
+library(funModeling)
+library(corrplot)
+library(dplyr)
+library(ggplot2)
+library(RColorBrewer)
+library(readxl)
+library(readr)
+library(viridis)
+library(corrgram)
+library(factoextra)
+library(ggsignif)
+library(viridis)
+library(lattice)
+library(caret)
+require("devtools")
+library(recipes)
+library(C50)
+library(rpart)
+library(rpart.plot)
+library(party)
+library(matrixStats)
+library(Hmisc)
+library(corrplot)
+library(PerformanceAnalytics)
+library(reshape2)
+
+
+
+wftrain <- read.csv("C:/Users/sunny/Desktop/5.Wifi/5.Wifi/1.Data/trainingData.csv")
+wfvalid <- read.csv("C:/Users/sunny/Desktop/5.Wifi/5.Wifi/1.Data/validationData.csv")
+wifi <- rbind(wftrain, wfvalid)
+```
+
+
+
+```{r}
+# 1.Convert WAP 100 to -105
+# (두번째: 신호 없는 100을 -105로 전환)
+wftrain[wftrain == 100] <- -105 
+wfvalid[wfvalid == 100] <- -105
+
+# 2. Convert Weak signal to -105
+# (-90 이하도 신호가 없는 것과 같기 때문에 변환)
+wftrain[,1:465 < -90] <- -105
+wfvalid[,1:465 < -90] <- -105
+
+
+# 3. Remove empty signal columns and rows
+col100 <- apply(wftrain[,1:465], 2, var) == 0
+row100 <- apply(wftrain[,1:465], 1, var) == 0
+train1 <- wftrain[!row100, !col100]
+
+col101 <- apply(wfvalid[,1:465], 2, var) == 0
+row101 <- apply(wfvalid[,1:465], 1, var) == 0
+test1 <- wfvalid[!row101, !col101]
+
+#  -> + 100을 -105로 바꾸고 -> -90보다 낮은 시그널도 -105로, 다음 105만 있는 컬럼 로를 없애기
+
+# 4. Equalizing the column amount in both WAPS data sets
+train3 <- train1[, which(colnames(train1) %in%
+                                      colnames(test1))]
+
+test3 <- test1[, which(colnames(test1) %in% 
+                                      colnames(train1))]
+
+# 5. Dataset for PCA
+PCAtrain <- train3 %>% 
+  select(starts_with("WAP"))
+
+PCAvalid <- test3 %>% 
+  select(starts_with("WAP"))
+         
+
+
+
+```
+
+
+
+
+
+2. PCA 
+```{r}
+# 1. Load data for analysis
+pcaCharts <- function(x) {
+    x.var <- x$sdev ^ 2
+    x.pvar <- x.var/sum(x.var)
+    print("proportions of variance:")
+    print(x.pvar)
+    par(mfrow=c(2,2))
+    plot(x.pvar,xlab="Principal component", ylab="Proportion of variance explained", ylim=c(0,1), type='b')
+    plot(cumsum(x.pvar),xlab="Principal component", ylab="Cumulative Proportion of variance explained", ylim=c(0,1), type='b')
+    screeplot(x)
+    screeplot(x,type="l")
+    par(mfrow=c(1,1))
+}
+
+#2. Load a data for analysis
+head(PCAtrain)
+which(apply(PCAtrain, 2, var)==0)
+pcatrain <- PCAtrain[, apply(PCAtrain, 2, var) != 0]
+
+pca.train <- prcomp(pcatrain, scale. = T, center = T)
+
+
+which(apply(PCAvalid, 2, var)==0)
+pcavalid <- PCAvalid[, apply(PCAvalid, 2, var) != 0]
+
+pca.valid <- prcomp(pcavalid, scale. = T, center = T)
+
+```
+
+
+Visualization of data
+```{r}
+names(pca.train)
+pca.train$center[1:10]
+pca.train$scale[1:10]
+pca.train$rotation[1:5, 1:5]
+dim(pca.train$x)
+
+pcaCharts(pca.train)
+
+biplot(pca.train, scale = 0, cex=.7)
+
+#pca_df <- data.frame(pca.train$x)
+#corrgram(pca_df, lower.panel=panel.cor, upper.panel=panel.pie)
+#corrgram(pca.train,
+#         lower.panel=panel.pts, upper.panel=panel.conf,
+#         diag.panel=panel.density)
+
+names(pca.valid)
+pca.valid$center[1:10]
+pca.valid$scale[1:10]
+pca.valid$rotation[1:5, 1:5]
+dim(pca.valid$x)
+
+pcaCharts(pca.valid)
+
+biplot(pca.valid, scale = 0, cex=.7)
+
+
+```
+
+```{r}
+#1. Train Set
+std_dev <- pca.train$sdev
+pr_var <- std_dev^2
+pr_var[1:10]
+
+prop_varex <- pr_var/sum(pr_var)
+prop_varex[1:20]
+
+plot(prop_varex, xlab = "Principal Component",
+             ylab = "Proportion of Variance Explained",
+             type = "b")
+
+plot(cumsum(prop_varex), xlab = "Principal Component",
+              ylab = "Cumulative Proportion of Variance Explained",
+              type = "b")
+
+screeplot(pca.train, npcs = 100)
+plot(pca.train, xlab = "var")
+
+fviz_eig(pca.train, addlabels = TRUE,
+         linecolor = "chocolate1",
+         barfill = "white",
+         barcolor = "darkblue")
+
+
+
+#2. Validation set
+std_dev_v <- pca.valid$sdev
+pr_var_v <- std_dev_v^2
+pr_var_v[1:10]
+
+prop_varex_v <- pr_var_v/sum(pr_var_v)
+prop_varex_v[1:20]
+
+plot(prop_varex_v, xlab = "Principal Component",
+             ylab = "Proportion of Variance Explained",
+             type = "b")
+
+plot(cumsum(prop_varex_v), xlab = "Principal Component",
+              ylab = "Cumulative Proportion of Variance Explained",
+              type = "b")
+
+screeplot(pca.valid, npcs = 100)
+plot(pca.valid, xlab = "var")
+
+fviz_eig(pca.valid, addlabels = TRUE,
+         linecolor = "chocolate1",
+         barfill = "white",
+         barcolor = "darkblue")
+
+
+```
+
+
+
+```{r}
+trainpca_BD <- data.frame(BUILDINGID = train3$BUILDINGID, pca.train$x)
+trainpca_BD <- trainpca_BD[,1:151]
+
+validpca_BD <- data.frame(BUILDINGID = test3$BUILDINGID, pca.valid$x)
+validpca_BD <- validpca_BD[,1:151]
+
+# 1. Building
+trainpca_BD$BUILDINGID <- as.factor(trainpca_BD$BUILDINGID)
+validpca_BD$BUILDINGID <- as.factor(validpca_BD$BUILDINGID)
+
+set.seed(365)
+sample_pca_BD <- createDataPartition (y = trainpca_BD$BUILDINGID, p = .15, list = FALSE)
+
+pca_train_BD <- trainpca_BD[sample_pca_BD,]
+pca_test_BD <- trainpca_BD[-sample_pca_BD,]
+
+#Cross Validation
+
+fitControl<- trainControl(method = "cv", 
+                          number = 3, 
+                          savePredictions = TRUE, 
+                          allowParallel = TRUE)
+
+
+a <- c("knn", "svmRadial", "xgbTree")
+
+compare_model <- c()
+
+for(i in a) {
+  
+  model <- train(BUILDINGID ~., data = pca_train_BD, method = i, trControl = fitControl)
+  
+  pred <- predict(model, newdata = pca_test_BD)
+  
+  pred_metric <- postResample(pca_test_BD$BUILDINGID, pred)
+  
+  compare_model <- cbind(compare_model, pred_metric)
+  
+}
+
+colnames(compare_model) <- a
+
+compare_model
+
+compare_model_melt <- melt(compare_model, varnames = c("metric", "model"))
+compare_model_melt <- as_data_frame(compare_model_melt)
+compare_model_melt
+
+
+xgbT_pca_BD <- train(BUILDINGID~., 
+                pca_train_BD, 
+                method = "xgbTree", 
+                trControl = fitControl, 
+                preProcess = "zv")
+
+xgbT_pca_pred_BD <- predict(xgbT_pca_BD, pca_test_BD)
+xgbT_pca_BD_PRS <- postResample(xgbT_pca_pred_BD, pca_test_BD$BUILDINGID)
+xgbT_pca_BD_PRS
+# Accuracy     Kappa 
+# 0.9982820 0.9973007
+
+xgbT_val_BDpca <- predict(xgbT_pca_BD, validpca_BD)
+postResample(xgbT_val_BDpca, validpca_BD$BUILDINGID)
+#  Accuracy      Kappa 
+# 0.1341134 -0.2609048 
+
+```
+
+```{r}
+trainpca_fl <- data.frame(FLOOR = train3$FLOOR, pca.train$x)
+trainpca_fl <- trainpca_fl[,1:151]
+
+validpca_fl <- data.frame(FLOOR = test3$FLOOR, pca.valid$x)
+validpca_fl <- validpca_fl[,1:151]
+
+# 2. Floor
+trainpca_fl$FLOOR <- as.factor(trainpca_fl$FLOOR)
+validpca_fl$FLOOR <- as.factor(validpca_fl$FLOOR)
+
+set.seed(365)
+sample_pca_fl <- createDataPartition (y = trainpca_fl$FLOOR, p = .15, list = FALSE)
+
+pca_train_fl <- trainpca_fl[sample_pca_fl,]
+pca_test_fl <- trainpca_fl[-sample_pca_fl,]
+
+#Cross Validation
+
+fitControl<- trainControl(method = "cv", 
+                          number = 3, 
+                          savePredictions = TRUE, 
+                          allowParallel = TRUE)
+
+
+a <- c("knn", "svmRadial", "xgbTree")
+
+compare_model <- c()
+
+for(i in a) {
+  
+  model <- train(FLOOR ~., data = pca_train_fl, method = i, trControl = fitControl)
+  
+  pred <- predict(model, newdata = pca_test_fl)
+  
+  pred_metric <- postResample(pca_test_fl$FLOOR, pred)
+  
+  compare_model <- cbind(compare_model , pred_metric)
+  
+}
+
+colnames(compare_model) <- a
+
+compare_model
+#               knn svmRadial   xgbTree
+#Accuracy 0.9523668 0.9595355 0.9787902
+#Kappa    0.9383024 0.9476362 0.9725472
+compare_model_melt <- melt(compare_model, varnames = c("metric", "model"))
+compare_model_melt <- as_data_frame(compare_model_melt)
+compare_model_melt
+
+
+xgbT_pca_fl <- train(FLOOR~., 
+                pca_train_fl, 
+                method = "xgbTree", 
+                trControl = fitControl, 
+                preProcess = "zv")
+
+xgbT_pca_pred_fl <- predict(xgbT_pca_fl, pca_test_fl)
+xgbT_pca_fl_PRS <- postResample(xgbT_pca_pred_fl, pca_test_fl$FLOOR)
+xgbT_pca_fl_PRS
+# Accuracy     Kappa 
+# 0.9792049 0.9730816
+
+xgbT_val_flpca <- predict(xgbT_pca_fl, validpca_fl)
+postResample(xgbT_val_flpca, validpca_fl$FLOOR)
+#  Accuracy      Kappa 
+# 0.34923492 0.08325801
+
+```
+
+```{r}
+trainpca_Lo <- data.frame(LONGITUDE = train3$LONGITUDE, pca.train$x)
+trainpca_Lo <- trainpca_Lo[,1:151]
+
+validpca_Lo <- data.frame(LONGITUDE = test3$LONGITUDE, pca.valid$x)
+validpca_Lo <- validpca_Lo[,1:151]
+
+
+# 3. LONGITUDE
+trainpca_Lo$LONGITUDE<- as.factor(trainpca_Lo$LONGITUDE)
+validpca_Lo$LONGITUDE <- as.factor(validpca_Lo$LONGITUDE)
+
+set.seed(365)
+sample_pca_Lo <- createDataPartition (y = trainpca_Lo$LONGITUDE, p = .15, list = FALSE)
+
+pca_train_Lo <- trainpca_Lo[sample_pca_Lo,]
+pca_test_Lo <- trainpca_Lo[-sample_pca_Lo,]
+
+#Cross Validation
+
+fitControl<- trainControl(method = "cv", 
+                          number = 3, 
+                          savePredictions = TRUE, 
+                          allowParallel = TRUE)
+
+
+a <- c("knn", "svmRadial", "xgbTree")
+
+compare_model <- c()
+
+for(i in a) {
+  
+  model <- train(LONGITUDE ~., data = pca_train_Lo, method = i, trControl = fitControl)
+  
+  pred <- predict(model, newdata = pca_test_Lo)
+  
+  pred_metric <- postResample(pca_test_Lo$LONGITUDE, pred)
+  
+  compare_model <- cbind(compare_model, pred_metric)
+  
+}
+
+colnames(compare_model) <- a
+
+compare_model
+#               knn svmRadial   xgbTree
+#Accuracy 0.9523668 0.9595355 0.9787902
+#Kappa    0.9383024 0.9476362 0.9725472
+compare_model_melt <- melt(compare_model, varnames = c("metric", "model"))
+compare_model_melt <- as_data_frame(compare_model_melt)
+compare_model_melt
+
+
+xgbT_pca_fl <- train(FLOOR~., 
+                pca_train_fl, 
+                method = "xgbTree", 
+                trControl = fitControl, 
+                preProcess = "zv")
+
+xgbT_pca_pred_fl <- predict(xgbT_pca_fl, pca_test_fl)
+xgbT_pca_fl_PRS <- postResample(xgbT_pca_pred_fl, pca_test_fl$FLOOR)
+xgbT_pca_fl_PRS
+# Accuracy     Kappa 
+# 0.9792049 0.9730816
+
+xgbT_val_flpca <- predict(xgbT_pca_fl, validpca_fl)
+postResample(xgbT_val_flpca, validpca_fl$FLOOR)
+```

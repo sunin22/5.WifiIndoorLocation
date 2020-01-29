@@ -1,0 +1,419 @@
+---
+title: "Ubiqum_3_WifiLocationing_ModelsBuilding"
+author: "SuninChoi"
+date: "1/8/2020"
+output: html_document
+After preprocessing the dataset, building different models to predict
+---
+
+
+
+```{r load dataset}
+library(tidyverse)
+library(ggplot2)
+library(corrplot)
+library(dplyr)
+library(RColorBrewer)
+library(readxl)
+library(readr)
+library(viridis)
+library(lattice)
+library(caret)
+require("devtools")
+library(recipes)
+library(C50)
+library(rpart)
+library(rpart.plot)
+library(party)
+library(matrixStats)
+library(Hmisc)
+library(corrplot)
+library(PerformanceAnalytics)
+
+
+buildID_T <- read.csv("C:/Users/sunny/Desktop/5.Wifi/5.Wifi/1.Data/buildID.csv")
+buildID_V <- read.csv("C:/Users/sunny/Desktop/5.Wifi/5.Wifi/1.Data/buildID_v.csv")
+
+Floor_T <- read.csv("C:/Users/sunny/Desktop/5.Wifi/5.Wifi/1.Data/Floor.csv")
+Floor_V <- read.csv("C:/Users/sunny/Desktop/5.Wifi/5.Wifi/1.Data/Floor_v.csv")
+
+Latitude_T <- read.csv("C:/Users/sunny/Desktop/5.Wifi/5.Wifi/1.Data/Latitude.csv")
+Latitude_V <- read.csv("C:/Users/sunny/Desktop/5.Wifi/5.Wifi/1.Data/Latitude_v.csv")
+
+Longtitude_T <- read.csv("C:/Users/sunny/Desktop/5.Wifi/5.Wifi/1.Data/Longtitude.csv")
+Longtitude_V <- read.csv("C:/Users/sunny/Desktop/5.Wifi/5.Wifi/1.Data/Longtitude_v.csv")
+
+
+```
+
+
+
+#### 1. KNN
+
+
+```{r developing a pipeline}
+
+# 1. Building
+buildID_T$BUILDINGID <- as.factor(buildID_T$BUILDINGID)
+buildID_V$BUILDINGID <- as.factor(buildID_V$BUILDINGID)
+
+set.seed(365)
+sample_BD <- createDataPartition (y = buildID_T$BUILDINGID, p = .15, list = FALSE)
+
+train_BD <- buildID_T[sample_BD,]
+test_BD <- buildID_T[-sample_BD,]
+
+BD_ctr <- trainControl(method = "repeatedcv", 
+                       number = 10, 
+                       repeats = 2, 
+                       preProc = c("center", "range"))
+
+knn_BD <- train(BUILDINGID~., 
+                train_BD, 
+                method = "knn", 
+                trControl = BD_ctr, 
+                preProcess = "zv")
+
+pred_knn_BD <- predict(knn_BD, test_BD)
+knn_BD_PRS <- postResample(pred_knn_BD, test_BD$BUILDINGID)
+knn_BD_PRS
+# Accuracy     Kappa 
+#0.9895735 0.9836155
+
+knn_val_BD <- predict(knn_BD, buildID_V)
+postResample(knn_val_BD, buildID_V$BUILDINGID)
+#Accuracy     Kappa 
+#0.9904335 0.9849679
+
+
+knn_BD_CM <- table(knn_val_BD, buildID_V$BUILDINGID)
+knn_BD_CM
+
+
+#2. Floor
+Floor_T$FLOOR<- as.factor(Floor_T$FLOOR)
+Floor_V$FLOOR <- as.factor(Floor_V$FLOOR)
+
+set.seed(365)
+sample_Fl <- createDataPartition (y = Floor_T$FLOOR, p = .25, list = FALSE)
+
+train_Fl <- Floor_T[sample_Fl,]
+test_Fl <- Floor_T[-sample_Fl,]
+
+Fl_ctr <- trainControl(method = "repeatedcv", 
+                       number = 10, 
+                       repeats = 2, 
+                       preProc = c("center", "range"))
+
+knn_Fl <- train(FLOOR~., 
+                train_Fl, 
+                method = "knn", 
+                trControl = Fl_ctr, 
+                preProcess = "zv")
+
+pred_knn_Fl <- predict(knn_Fl, test_Fl)
+knn_Fl_PRS <- postResample(pred_knn_Fl, test_Fl$FLOOR)
+knn_Fl_PRS
+# Accuracy     Kappa 
+# 0.9338660 0.9144578 
+
+knn_val_Fl <- predict(knn_Fl, Floor_V)
+postResample(knn_val_Fl, Floor_V$FLOOR)
+#Accuracy     Kappa 
+#0.2727273 0.0239063 
+
+knn_Fl_CM <- table(knn_val_Fl, Floor_V$FLOOR)
+knn_Fl_CM
+
+
+# 3. Longtitude
+set.seed(365)
+sample_Long <- createDataPartition (y = Longtitude_T$LONGITUDE, p = .25, list = FALSE)
+
+train_Long <- Longtitude_T[sample_Long,]
+test_Long <- Longtitude_T[-sample_Long,]
+
+Long_ctr <- trainControl(method = "repeatedcv", 
+                       number = 10, 
+                       repeats = 2, 
+                       preProc = c("center", "range"))
+
+knn_Long <- train(LONGITUDE~., 
+                train_Long, 
+                method = "knn", 
+                trControl = Long_ctr, 
+                preProcess = "zv")
+
+pred_knn_Long <- predict(knn_Long, test_Long)
+
+knn_Long_PRS <- postResample(pred_knn_Long, test_Long$LONGITUDE)
+knn_Long_PRS
+#RMSE   Rsquared        MAE 
+#16.9683454  0.9813255 10.7752292
+
+knn_val_Long <- predict(knn_Long, Longtitude_V)
+postResample(knn_val_Long, Longtitude_V$LONGITUDE)
+#       RMSE    Rsquared         MAE 
+#120.9256464   0.2318587  99.3971402
+
+knn_Long_CM <- table(knn_val_Long, Longtitude_V$LONGITUDE)
+
+
+
+#4. Latitude
+
+set.seed(365)
+sample_La <- createDataPartition (y = Latitude_T$LATITUDE, p = .25, list = FALSE)
+
+train_La <- Latitude_T[sample_La,]
+test_La <- Latitude_T[-sample_La,]
+
+La_ctr <- trainControl(method = "repeatedcv", 
+                       number = 10, 
+                       repeats = 2, 
+                       preProc = c("center", "range"))
+
+knn_La <- train(LATITUDE~., 
+                train_La, 
+                method = "knn", 
+                trControl = La_ctr, 
+                preProcess = "zv")
+
+pred_knn_La <- predict(knn_La, test_La)
+knn_La_PRS <- postResample(pred_knn_La, test_La$LATITUDE)
+knn_La_PRS
+#RMSE   Rsquared        MAE 
+#14.0322550  0.9562322  8.6546930 
+
+knn_val_La <- predict(knn_La, Latitude_V)
+postResample(knn_val_La, Latitude_V$LATITUDE)
+# RMSE   Rsquared        MAE 
+#66.7353163  0.3789959 52.6964722 
+
+knn_La_CM <- table(knn_val_La, Latitude_V$LATITUDE)
+
+```
+
+
+
+# 2.Support Vector Machine 
+
+
+```{r}
+
+## SVM Train Control
+svmctr <- trainControl(method = "repeatedcv",
+                           number = 10,
+                           repeats = 2,
+                           preProc = "center", "range")
+
+
+svm_BD <- train(BUILDINGID~., 
+                train_BD, 
+                method = "svmLinear", 
+                trControl = svmctr, 
+                preProcess = "zv")
+
+pred_svm_BD <- predict(svm_BD, test_BD)
+svm_BD_PRS <- postResample(pred_svm_BD, test_BD$BUILDINGID)
+svm_BD_PRS
+# Accuracy     Kappa 
+#0.9995853 0.9993480 
+
+svm_val_BD <- predict(svm_BD, buildID_V)
+postResample(svm_val_BD, buildID_V$BUILDINGID)
+# Accuracy     Kappa 
+#0.9996476 0.9994459 
+
+svm_BD_CM <- table(svm_val_BD, buildID_V$BUILDINGID)
+svm_BD_CM
+
+
+#2. Floor
+svm_fl <- train(FLOOR~., 
+                train_Fl, 
+                method = "svmLinear", 
+                trControl = svmctr, 
+                preProcess = "zv")
+
+pred_svm_fl <- predict(svm_fl, test_Fl)
+svm_fl_PRS <- postResample(pred_svm_fl, test_Fl$FLOOR)
+svm_fl_PRS
+# Accuracy     Kappa 
+#0.9878475 0.9842752
+
+svm_val_fl <- predict(svm_fl, Floor_V)
+postResample(svm_val_fl, Floor_V$FLOOR)
+# Accuracy     Kappa 
+#0.8712871 0.8217996 
+
+svm_fl_CM <- table(svm_val_fl, Floor_V$FLOOR)
+svm_fl_CM
+
+
+#3. Longtitude
+svm_Long <- train(LONGITUDE~., 
+                train_Long, 
+                method = "svmLinear", 
+                trControl = svmctr, 
+                preProcess = "zv")
+
+pred_svm_Long <- predict(svm_Long, test_Long)
+svm_Long_PRS <- postResample(pred_svm_Long, test_Long$LONGITUDE)
+svm_Long_PRS
+#   RMSE   Rsquared        MAE 
+#28.7203377  0.9460751 20.6094743 
+
+svm_val_Long <- predict(svm_Long, Longtitude_V)
+postResample(svm_val_Long, Longtitude_V$LONGITUDE)
+#RMSE   Rsquared        MAE 
+#66.5092097  0.7596069 47.0445262 
+
+svm_Long_CM <- table(svm_val_Long, Longtitude_V$LONGITUDE)
+svm_Long_CM
+
+#4. Latitude
+svm_La <- train(LATITUDE~., 
+                train_La, 
+                method = "svmLinear", 
+                trControl = svmctr, 
+                preProcess = "zv")
+
+pred_svm_La <- predict(svm_La, test_La)
+svm_La_PRS <- postResample(pred_svm_La, test_La$LATITUDE)
+svm_La_PRS
+#RMSE        Rsquared  MAE 
+#18.1247519  0.9269575 13.2617109
+
+svm_val_La <- predict(svm_La, Latitude_V)
+postResample(svm_val_La, Latitude_V$LATITUDE)
+#RMSE       Rsquared  MAE 
+#36.4975986 0.7649667 26.1931819 
+
+svm_La_CM <- table(svm_val_La, Latitude_V$LATITUDE)
+
+
+```
+
+
+
+# 3. Random Forest
+
+
+```{r}
+set.seed(365)
+
+#1. Building
+RFGrid <- expand.grid(mtry=27)
+RF_BD <- train(BUILDINGID ~ ., 
+                 train_BD,
+                 method = "rf",
+                 trControl = trainControl(method = "repeatedcv",
+                                          number = 5,
+                                          repeats = 2),
+                 tuneGrid = RFGrid,
+                 tuneLenght = 2,
+                 preProcess = "zv")
+
+pred_RF_BD <- predict(RF_BD, test_BD)
+RF_BD_PRS <- postResample(pred_RF_BD, test_BD$BUILDINGID)
+RF_BD_PRS
+# Accuracy     Kappa 
+#0.9994668 0.9991619
+
+rf_val_BD <- predict(RF_BD, buildID_V)
+postResample(rf_val_BD, buildID_V$BUILDINGID)
+#Accuracy     Kappa 
+#0.9995469 0.9992877 
+
+rf_BD_cm <- table(rf_val_BD, buildID_V$BUILDINGID)
+rf_BD_cm
+
+
+# 2.Floor 
+RF_fl <- train(FLOOR ~ ., 
+                 train_Fl,
+                 method = "rf",
+                 trControl = trainControl(method = "repeatedcv",
+                                          number = 5,
+                                          repeats = 2),
+                 tuneGrid = RFGrid,
+                 tuneLenght = 2,
+                 preProcess = "zv")
+
+pred_RF_fl <- predict(RF_fl, test_Fl)
+RF_fl_PRS <- postResample(pred_RF_fl, test_Fl$FLOOR)
+RF_fl_PRS
+# Accuracy     Kappa 
+# 0.9963744 0.9953087 
+
+rf_val_fl <- predict(RF_fl, Floor_V)
+postResample(rf_val_fl, Floor_V$FLOOR)
+#Accuracy     Kappa 
+#0.4320432 0.2235012 
+
+rf_fl_cm <- table(rf_val_fl, Floor_V$FLOOR)
+rf_fl_cm
+
+
+# 3. Longitude 
+RF_Long <- train(LONGITUDE ~ ., 
+                 train_Long,
+                 method = "rf",
+                 trControl = trainControl(method = "repeatedcv",
+                                          number = 5,
+                                          repeats = 2),
+                 tuneGrid = RFGrid,
+                 tuneLenght = 2,
+                 preProcess = "zv")
+
+pred_RF_Long <- predict(RF_Long, test_Long)
+RF_Long_PRS <- postResample(pred_RF_Long, test_Long$LONGITUDE)
+RF_Long_PRS
+#     RMSE  Rsquared       MAE 
+#6.9554480 0.9968742 4.5737969 
+
+rf_val_Long <- predict(RF_Long, Longtitude_V)
+postResample(rf_val_Long, Longtitude_V$LONGITUDE)
+#  RMSE   Rsquared        MAE 
+#23.3140733  0.9813308 17.7071797 
+
+rf_Long_cm <- table(rf_val_Long, Longtitude_V$LONGITUDE)
+rf_Long_cm
+
+
+# 4. Latitude 
+RF_La <- train(LATITUDE ~ ., 
+                 train_La,
+                 method = "rf",
+                 trControl = trainControl(method = "repeatedcv",
+                                          number = 5,
+                                          repeats = 2),
+                 tuneGrid = RFGrid,
+                 tuneLenght = 2,
+                 preProcess = "zv")
+
+pred_RF_La <- predict(RF_La, test_La)
+RF_La_PRS <- postResample(pred_RF_La, test_La$LATITUDE)
+RF_La_PRS
+#     RMSE  Rsquared       MAE 
+#5.6465168 0.9930697 3.6778656 
+
+rf_val_La <- predict(RF_La, Latitude_V)
+postResample(rf_val_La, Latitude_V$LATITUDE)
+#      RMSE   Rsquared        MAE 
+#11.0906531  0.9771665  7.6890406 
+
+rf_La_cm <- table(rf_val_La, Latitude_V$LATITUDE)
+rf_La_cm
+
+
+
+
+```
+
+
+
+
+
+
